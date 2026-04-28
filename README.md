@@ -2,35 +2,6 @@
 
 Arduino Nano ESP32 indoor environment monitor with BME688, MAX4466, SPS30, OLED display, and a FastAPI dashboard.
 
-## SPS30 Wiring
-
-The SPS30 is connected over I2C on the same `Wire` bus as the OLED and BME688.
-
-### Arduino Libraries
-
-In the Arduino IDE, open `Sketch` -> `Include Library` -> `Manage Libraries...` and install:
-
-- `Sensirion I2C SPS30`
-- `Sensirion Core`
-
-### Wiring To Arduino Nano ESP32
-
-| SPS30 | Common wire color | Arduino Nano ESP32 |
-| --- | --- | --- |
-| VDD / pin 1 | Red | 5V |
-| SDA / pin 2 | Green | A4 / SDA |
-| SCL / pin 3 | Yellow | A5 / SCL |
-| SEL / pin 4 | Blue | GND |
-| GND / pin 5 | Black | GND |
-
-Notes:
-
-- The SPS30 requires a 5V supply. Its I2C signals are compatible with 3.3V logic, so it can be used with the Nano ESP32.
-- If your breakout board pulls SDA/SCL up to 5V, move the pull-ups to 3.3V or use a level shifter to protect the ESP32 pins.
-- The `SEL` pin must be connected to GND before power-up to select I2C mode. If it is left floating, the SPS30 starts in UART mode and the firmware will not detect it.
-- The default SPS30 I2C address is `0x69`.
-- OLED, BME688, and SPS30 can share SDA/SCL because they are I2C devices with different addresses.
-
 ## Dashboard
 
 The dashboard lives in the `dashboard` directory and is built with FastAPI.
