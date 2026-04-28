@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Indoor Environment Quality</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="dashboard">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Nano ESP32</p>
+          <h1>Environment Quality</h1>
+        </div>
+        <div class="connection">
+          <span class="dot" id="status-dot"></span>
+          <div>
+            <span id="status-text">Connecting</span>
+            <small id="last-update">Waiting for data</small>
+          </div>
+        </div>
+      </header>
+
+      <section class="overview" aria-label="Overview">
+        <article class="score-panel">
+          <div class="metric-title">
+            <p>IEQ score</p>
+            <button class="help-button" type="button" aria-label="IEQ score help" data-help="Overall indoor environmental quality score summarizing the monitored environment. In this dashboard, it is a simplified roll-up indicator intended to show general environmental quality at a glance.">?</button>
+          </div>
+          <strong id="ieq-score">--</strong>
+          <span>/100</span>
+        </article>
+
+        <article class="primary-metric">
+          <div class="metric-title">
+            <p>IAQ</p>
+            <button class="help-button" type="button" aria-label="IAQ help" data-help="Indoor Air Quality indicator representing the current air condition estimated from the sensor's environmental and gas measurements. Higher values generally indicate poorer air quality.">?</button>
+          </div>
+          <strong id="iaq-value">--</strong>
+          <span id="iaq-label">Waiting</span>
+        </article>
+
+        <article class="primary-metric">
+          <div class="metric-title">
+            <p>Sound</p>
+            <button class="help-button" type="button" aria-label="Sound help" data-help="Current ambient sound level measured in decibels. This value reflects the noise level around the device at the moment of measurement.">?</button>
+          </div>
+          <strong><span id="sound-db">--</span> dB</strong>
+          <span id="sound-note">Baseline adjusted</span>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel bme-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Page 2</p>
+              <h2>BME688</h2>
+            </div>
+            <span class="pill">I2C</span>
+          </div>
+
+          <div class="metric-list">
+            <div>
+              <span class="metric-label">Temperature <button class="help-button" type="button" aria-label="Temperature help" data-help="Current indoor air temperature measured near the device.">?</button></span>
+              <strong><span id="temp">--</span> C</strong>
+            </div>
+            <div>
+              <span class="metric-label">Humidity <button class="help-button" type="button" aria-label="Humidity help" data-help="Current relative humidity, indicating how much moisture is present in the air compared with the maximum the air can hold at the same temperature.">?</button></span>
+              <strong><span id="humidity">--</span> %</strong>
+            </div>
+            <div>
+              <span class="metric-label">Pressure <button class="help-button" type="button" aria-label="Pressure help" data-help="Current barometric pressure measured by the sensor. This is the absolute atmospheric pressure at the device location.">?</button></span>
+              <strong><span id="pressure">--</span> hPa</strong>
+            </div>
+            <div>
+              <span class="metric-label">Accuracy <button class="help-button" type="button" aria-label="Accuracy help" data-help="Current confidence level of the Bosch air-quality algorithm baseline and calibration state. A higher value means the IAQ-related outputs are more stable and reliable.">?</button></span>
+              <strong id="accuracy">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">eCO2 <button class="help-button" type="button" aria-label="eCO2 help" data-help="Estimated equivalent CO2 level derived from the Bosch algorithm. This is not a direct CO2 measurement; it is an approximation inferred from the gas sensor response.">?</button></span>
+              <strong><span id="eco2">--</span> ppm</strong>
+            </div>
+            <div>
+              <span class="metric-label">bVOC <button class="help-button" type="button" aria-label="bVOC help" data-help="Estimated breath VOC equivalent derived from the Bosch algorithm. It represents a VOC-related air quality estimate rather than the concentration of a specific gas.">?</button></span>
+              <strong><span id="bvoc">--</span> ppm</strong>
+            </div>
+            <div>
+              <span class="metric-label">Gas <button class="help-button" type="button" aria-label="Gas help" data-help="Raw or compensated gas resistance signal from the MOX gas sensor. This value reflects how strongly the sensor is reacting to VOC-related gases in the environment; it is not a direct reading of one specific gas.">?</button></span>
+              <strong><span id="gas">--</span> ohm</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Live trend</p>
+              <h2>Air and Sound</h2>
+            </div>
+            <button id="pause-button" type="button">Pause</button>
+          </div>
+
+          <div class="chart-stack">
+            <div>
+              <div class="chart-title">
+                <label for="iaq-chart">IAQ</label>
+                <button class="help-button" type="button" aria-label="IAQ chart help" data-help="Live trend of the IAQ value over time.">?</button>
+              </div>
+              <canvas id="iaq-chart" width="720" height="220"></canvas>
+            </div>
+            <div>
+              <div class="chart-title">
+                <label for="sound-chart">Sound dB</label>
+                <button class="help-button" type="button" aria-label="Sound chart help" data-help="Live trend of ambient sound level over time.">?</button>
+              </div>
+              <canvas id="sound-chart" width="720" height="220"></canvas>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

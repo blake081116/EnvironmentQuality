@@ -1,0 +1,3 @@
+fastapi
+pyserial
+uvicorn[standard]

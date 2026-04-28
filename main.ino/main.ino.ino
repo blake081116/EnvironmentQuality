@@ -1,19 +1,12 @@
 #include <math.h>
 #include <Wire.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <bsec2.h>
 #include <Preferences.h>
+#include <SensirionI2cSps30.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-
-#define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
-
-// Adafruit BME688/BME680 mac dinh dung I2C 0x77.
-// Tren breakout Adafruit: SCK -> SCL, SDI -> SDA, CS -> 3V3/bo ho, SDO -> bo ho.
-// Neu noi SDO xuong GND thi doi thanh BME68X_I2C_ADDR_LOW.
-#define BME688_I2C_ADDR      BME68X_I2C_ADDR_HIGH
-
-// 6 gio, giong y tuong STATE_SAVE_PERIOD cua example Bosch
-#define STATE_SAVE_PERIOD_MS (360UL * 60UL * 1000UL)
 
 const int IEQ_SCORE = 100;
 
@@ -23,48 +16,65 @@ const int OLED_RESET = -1;
 const int OLED_ADDRESS = 0x3C;
 
 const int BUTTON_PIN = 6;         // Noi nut vao D6 va GND
-const int PAGE_COUNT = 3;
+const int PAGE_COUNT = 6;
 const uint32_t BUTTON_DEBOUNCE_MS = 50;
 const uint32_t DISPLAY_UPDATE_MS = 250;
 const uint32_t POPUP_DURATION_MS = 1600;
+const uint32_t SERIAL_BAUD = 115200;
+const uint32_t SERIAL_SEND_MS = 1000;
+const uint32_t HTTP_SEND_MS = 1000;
+const uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
 
-const int MIC_PIN = A0;
-const float VREF = 3.3f;          // Nano ESP32 dung 3.3V
-const int ADC_MAX = 4095;         // 12-bit
-const int SAMPLE_COUNT = 300;     // gon hon de khong block BSEC qua lau
-const uint32_t SOUND_UPDATE_MS = 1000;
+// Dien Wi-Fi va IP may dang chay FastAPI de board gui data qua mang.
+// Chay laptop server bang: uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
+// Lay IP laptop bang: ipconfig getifaddr en0
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
+const char* API_URL = "";
 
-// Baseline microphone dang thap hon Apple Watch khoang 15 dB: 35 dB -> 50 dB.
-// Neu can can chinh tiep, doi so nay.
-const float SOUND_DB_OFFSET = 15.0f;
-const float MIN_VRMS = 0.001f;
-
-Bsec2 envSensor;
-Preferences prefs;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE];
+extern uint8_t latestIaqAccuracy;
+extern float latestIaq;
+extern float latestStaticIaq;
+extern float latestEco2;
+extern float latestBvoc;
+extern float latestRawTemp;
+extern float latestTemp;
+extern float latestRawHum;
+extern float latestHum;
+extern float latestPress;
+extern float latestRawGas;
+extern float latestCompGas;
+extern float latestGasPercentage;
+extern float latestStabilizationStatus;
+extern float latestDb;
+extern float latestVrms;
+extern float latestPm1p0;
+extern float latestPm2p5;
+extern float latestPm4p0;
+extern float latestPm10p0;
+extern float latestNc0p5;
+extern float latestNc1p0;
+extern float latestNc2p5;
+extern float latestNc4p0;
+extern float latestNc10p0;
+extern float latestTypicalParticleSize;
+extern bool latestSps30Ready;
+extern int16_t latestSps30Error;
 
-uint8_t latestIaqAccuracy = 0;
-uint32_t lastStateSaveMs = 0;
-bool firstStateSaved = false;
-
-float latestIaq = NAN;
-float latestStaticIaq = NAN;
-float latestEco2 = NAN;
-float latestBvoc = NAN;
-float latestTemp = NAN;
-float latestHum = NAN;
-float latestPress = NAN;
-float latestCompGas = NAN;
-
-float latestDb = NAN;
-float latestVrms = NAN;
+void initBME688();
+void updateBME688();
+void initMax4466();
+void updateMax4466();
+void initSPS30();
+void updateSPS30();
 
 bool displayReady = false;
 uint8_t currentPage = 0;
 uint32_t lastDisplayMs = 0;
-uint32_t lastSoundMs = 0;
+uint32_t lastSerialMs = 0;
+uint32_t lastHttpMs = 0;
 
 bool buttonLastReading = HIGH;
 bool buttonStableState = HIGH;
@@ -121,27 +131,244 @@ void drawValue(float value, uint8_t digits)
   }
 }
 
-void drawPageIEQ()
+String jsonFloat(float value, uint8_t digits)
+{
+  if (isnan(value) || isinf(value)) {
+    return "null";
+  }
+
+  return String(value, (unsigned int)digits);
+}
+
+String makeJsonSample()
+{
+  String json = "{\"ieq\":{\"score\":";
+  json += IEQ_SCORE;
+  json += "},\"bme\":{\"temp\":";
+  json += jsonFloat(latestTemp, 2);
+  json += ",\"rawTemp\":";
+  json += jsonFloat(latestRawTemp, 2);
+  json += ",\"humidity\":";
+  json += jsonFloat(latestHum, 2);
+  json += ",\"rawHumidity\":";
+  json += jsonFloat(latestRawHum, 2);
+  json += ",\"pressure\":";
+  json += jsonFloat(latestPress, 2);
+  json += ",\"iaq\":";
+  json += jsonFloat(latestIaq, 1);
+  json += ",\"staticIaq\":";
+  json += jsonFloat(latestStaticIaq, 1);
+  json += ",\"accuracy\":";
+  json += String(latestIaqAccuracy);
+  json += ",\"eco2\":";
+  json += jsonFloat(latestEco2, 1);
+  json += ",\"bvoc\":";
+  json += jsonFloat(latestBvoc, 3);
+  json += ",\"gas\":";
+  json += jsonFloat(latestCompGas, 0);
+  json += ",\"rawGas\":";
+  json += jsonFloat(latestRawGas, 0);
+  json += ",\"compGas\":";
+  json += jsonFloat(latestCompGas, 0);
+  json += ",\"gasPercentage\":";
+  json += jsonFloat(latestGasPercentage, 1);
+  json += ",\"stabilizationStatus\":";
+  json += jsonFloat(latestStabilizationStatus, 0);
+  json += "},\"sound\":{\"db\":";
+  json += jsonFloat(latestDb, 1);
+  json += ",\"vrms\":";
+  json += jsonFloat(latestVrms, 4);
+  json += "},\"sps30\":{\"ready\":";
+  json += latestSps30Ready ? "true" : "false";
+  json += ",\"error\":";
+  json += String(latestSps30Error);
+  json += ",\"pm1p0\":";
+  json += jsonFloat(latestPm1p0, 1);
+  json += ",\"pm2p5\":";
+  json += jsonFloat(latestPm2p5, 1);
+  json += ",\"pm4p0\":";
+  json += jsonFloat(latestPm4p0, 1);
+  json += ",\"pm10p0\":";
+  json += jsonFloat(latestPm10p0, 1);
+  json += ",\"nc0p5\":";
+  json += jsonFloat(latestNc0p5, 1);
+  json += ",\"nc1p0\":";
+  json += jsonFloat(latestNc1p0, 1);
+  json += ",\"nc2p5\":";
+  json += jsonFloat(latestNc2p5, 1);
+  json += ",\"nc4p0\":";
+  json += jsonFloat(latestNc4p0, 1);
+  json += ",\"nc10p0\":";
+  json += jsonFloat(latestNc10p0, 1);
+  json += ",\"typicalSize\":";
+  json += jsonFloat(latestTypicalParticleSize, 2);
+  json += "}}";
+  return json;
+}
+
+void sendSerialSample()
+{
+  Serial.println(makeJsonSample());
+}
+
+bool wifiCredentialsConfigured()
+{
+  return WIFI_SSID[0] != '\0';
+}
+
+bool httpPushConfigured()
+{
+  return API_URL[0] != '\0';
+}
+
+void connectWiFi()
+{
+  if (!wifiCredentialsConfigured()) {
+    showBootMessage("WiFi skipped", "Set WIFI_SSID");
+    Serial.println("WiFi skipped: set WIFI_SSID/WIFI_PASSWORD to enable wireless mode.");
+    delay(900);
+    return;
+  }
+
+  showBootMessage("WiFi", "Connecting...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  uint32_t startMs = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startMs < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(250);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    showBootMessage("WiFi connected", WiFi.localIP().toString().c_str());
+    Serial.print("WiFi connected: ");
+    Serial.print(WiFi.SSID());
+    Serial.print(" ");
+    Serial.println(WiFi.localIP());
+    delay(900);
+  } else {
+    showBootMessage("WiFi failed", "Check SSID/pass");
+    Serial.println("WiFi failed: check WIFI_SSID/WIFI_PASSWORD.");
+    delay(1200);
+  }
+}
+
+void sendHttpSample()
+{
+  if (!wifiCredentialsConfigured() || !httpPushConfigured()) return;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.reconnect();
+    return;
+  }
+
+  HTTPClient http;
+  http.setTimeout(1500);
+  http.begin(API_URL);
+  http.addHeader("Content-Type", "application/json");
+  http.POST(makeJsonSample());
+  http.end();
+}
+
+String displayTextLimit(String text, uint8_t maxChars)
+{
+  if (text.length() <= maxChars) return text;
+
+  return text.substring(0, maxChars);
+}
+
+String connectedWiFiName()
+{
+  if (WiFi.status() == WL_CONNECTED) {
+    String ssid = WiFi.SSID();
+    if (ssid.length()) return ssid;
+  }
+
+  if (WIFI_SSID[0] != '\0') return "WiFi not connected";
+
+  return "USB cable";
+}
+
+String connectedWiFiIp()
+{
+  if (WiFi.status() == WL_CONNECTED) {
+    return WiFi.localIP().toString();
+  }
+
+  return "--";
+}
+
+void drawPageInfo()
 {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-
   display.setTextSize(1);
+
   display.setCursor(0, 0);
-  display.print("Page 1: IEQ");
+  display.print("Page 0: Info");
 
-  drawCenteredText("IEQ SCORE", 16, 1);
+  display.setCursor(0, 10);
+  display.print(WiFi.status() == WL_CONNECTED ? "WiFi: " : "Link: ");
+  display.print(displayTextLimit(connectedWiFiName(), 15));
 
-  display.setTextSize(3);
-  display.setCursor(10, 34);
-  display.print(IEQ_SCORE);
+  display.setCursor(0, 20);
+  display.print("IP: ");
+  display.print(connectedWiFiIp());
+
+  display.setCursor(0, 34);
+  display.print("IEQ SCORE");
+
   display.setTextSize(2);
+  display.setCursor(0, 46);
+  display.print(IEQ_SCORE);
   display.print("/100");
 
   display.display();
 }
 
-void drawPageBME()
+void drawPageBMEFirst()
+{
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  display.setCursor(0, 0);
+  display.print("Page 1: BME688");
+
+  display.setCursor(0, 9);
+  display.print("IAQ: ");
+  drawValue(latestIaq, 1);
+  display.print(" A:");
+  display.print(latestIaqAccuracy);
+
+  display.setCursor(0, 18);
+  display.print("Static: ");
+  drawValue(latestStaticIaq, 1);
+
+  display.setCursor(0, 27);
+  display.print("Raw T: ");
+  drawValue(latestRawTemp, 1);
+  display.print(" C");
+
+  display.setCursor(0, 36);
+  display.print("Comp T:");
+  drawValue(latestTemp, 1);
+  display.print(" C");
+
+  display.setCursor(0, 45);
+  display.print("Raw H: ");
+  drawValue(latestRawHum, 1);
+  display.print(" %");
+
+  display.setCursor(0, 54);
+  display.print("Comp H:");
+  drawValue(latestHum, 1);
+  display.print(" %");
+
+  display.display();
+}
+
+void drawPageBMESecond()
 {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
@@ -150,41 +377,51 @@ void drawPageBME()
   display.setCursor(0, 0);
   display.print("Page 2: BME688");
 
-  display.setCursor(0, 8);
-  display.print("Temp: ");
-  drawValue(latestTemp, 1);
-  display.print(" C");
-
-  display.setCursor(0, 16);
-  display.print("Hum : ");
-  drawValue(latestHum, 1);
-  display.print(" %");
-
-  display.setCursor(0, 24);
-  display.print("Pres: ");
-  drawValue(latestPress, 1);
-  display.print(" hPa");
-
-  display.setCursor(0, 32);
-  display.print("IAQ : ");
-  drawValue(latestIaq, 1);
-  display.print(" Acc:");
-  display.print(latestIaqAccuracy);
-
-  display.setCursor(0, 40);
+  display.setCursor(0, 14);
   display.print("eCO2: ");
   drawValue(latestEco2, 0);
   display.print(" ppm");
 
-  display.setCursor(0, 48);
+  display.setCursor(0, 28);
   display.print("bVOC: ");
   drawValue(latestBvoc, 3);
   display.print(" ppm");
 
-  display.setCursor(0, 56);
-  display.print("Gas : ");
+  display.setCursor(0, 42);
+  display.print("RawGas: ");
+  drawValue(latestRawGas, 0);
+  display.print(" ohm");
+
+  display.display();
+}
+
+void drawPageBMEThird()
+{
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  display.setCursor(0, 0);
+  display.print("Page 3: BME688");
+
+  display.setCursor(0, 10);
+  display.print("Acc: ");
+  display.print(latestIaqAccuracy);
+  display.print("/3");
+
+  display.setCursor(0, 22);
+  display.print("Stab: ");
+  drawValue(latestStabilizationStatus, 0);
+
+  display.setCursor(0, 34);
+  display.print("CompGas: ");
   drawValue(latestCompGas, 0);
   display.print(" ohm");
+
+  display.setCursor(0, 48);
+  display.print("Gas %: ");
+  drawValue(latestGasPercentage, 1);
+  display.print(" %");
 
   display.display();
 }
@@ -201,7 +438,7 @@ void drawPageSound()
 
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.print("Page 3: Sound");
+  display.print("Page 4: Sound");
 
   display.setTextSize(2);
   display.setCursor(0, 16);
@@ -220,6 +457,55 @@ void drawPageSound()
   display.display();
 }
 
+void drawPageSPS30()
+{
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  display.setCursor(0, 0);
+  display.print("Page 5: SPS30");
+
+  if (!latestSps30Ready) {
+    display.setCursor(0, 18);
+    display.print("Sensor not ready");
+    display.setCursor(0, 30);
+    display.print("Check 5V/I2C/SEL");
+    display.setCursor(0, 42);
+    display.print("Err: ");
+    display.print(latestSps30Error);
+    display.display();
+    return;
+  }
+
+  display.setCursor(0, 10);
+  display.print("PM1.0 : ");
+  drawValue(latestPm1p0, 1);
+  display.print(" ug/m3");
+
+  display.setCursor(0, 20);
+  display.print("PM2.5 : ");
+  drawValue(latestPm2p5, 1);
+  display.print(" ug/m3");
+
+  display.setCursor(0, 30);
+  display.print("PM4.0 : ");
+  drawValue(latestPm4p0, 1);
+  display.print(" ug/m3");
+
+  display.setCursor(0, 40);
+  display.print("PM10  : ");
+  drawValue(latestPm10p0, 1);
+  display.print(" ug/m3");
+
+  display.setCursor(0, 52);
+  display.print("Size: ");
+  drawValue(latestTypicalParticleSize, 2);
+  display.print(" um");
+
+  display.display();
+}
+
 void renderDisplay()
 {
   if (!displayReady) return;
@@ -231,13 +517,22 @@ void renderDisplay()
 
   switch (currentPage) {
     case 0:
-      drawPageIEQ();
+      drawPageInfo();
       break;
     case 1:
-      drawPageBME();
+      drawPageBMEFirst();
       break;
     case 2:
+      drawPageBMESecond();
+      break;
+    case 3:
+      drawPageBMEThird();
+      break;
+    case 4:
       drawPageSound();
+      break;
+    case 5:
+      drawPageSPS30();
       break;
   }
 }
@@ -256,171 +551,6 @@ void showErrorAndStop(const char *line1, int code)
   }
 
   while (1) delay(1000);
-}
-
-void checkBsecStatus()
-{
-  if (envSensor.status < BSEC_OK) {
-    showErrorAndStop("BSEC error", envSensor.status);
-  } else if (envSensor.status > BSEC_OK) {
-    showPopup("BSEC warning", "Check sensor");
-  }
-
-  if (envSensor.sensor.status < BME68X_OK) {
-    showErrorAndStop("BME688 error", envSensor.sensor.status);
-  } else if (envSensor.sensor.status > BME68X_OK) {
-    showPopup("BME688 warning", "Check sensor");
-  }
-}
-
-bool loadStateFromNVS()
-{
-  showBootMessage("BSEC state", "Loading...");
-  delay(700);
-
-  size_t len = prefs.getBytesLength("state");
-
-  if (len != BSEC_MAX_STATE_BLOB_SIZE) {
-    showBootMessage("BSEC state", "No saved state");
-    delay(1100);
-    return true;
-  }
-
-  size_t readLen = prefs.getBytes("state", bsecState, BSEC_MAX_STATE_BLOB_SIZE);
-  if (readLen != BSEC_MAX_STATE_BLOB_SIZE) {
-    showBootMessage("BSEC state", "Read failed");
-    delay(1100);
-    return false;
-  }
-
-  if (!envSensor.setState(bsecState)) {
-    showBootMessage("BSEC state", "Load failed");
-    delay(1100);
-    return false;
-  }
-
-  firstStateSaved = true;
-  lastStateSaveMs = millis();
-
-  showBootMessage("BSEC state", "Loaded");
-  delay(1100);
-  return true;
-}
-
-bool saveStateToNVS()
-{
-  if (!envSensor.getState(bsecState)) {
-    showPopup("BSEC state", "Get failed");
-    return false;
-  }
-
-  size_t written = prefs.putBytes("state", bsecState, BSEC_MAX_STATE_BLOB_SIZE);
-  if (written != BSEC_MAX_STATE_BLOB_SIZE) {
-    showPopup("BSEC state", "Save failed");
-    return false;
-  }
-
-  lastStateSaveMs = millis();
-  firstStateSaved = true;
-  showPopup("BSEC state", "Saved to NVS");
-  return true;
-}
-
-void maybeSaveState()
-{
-  bool shouldSave = false;
-
-  // Luu lan dau khi BSEC da calibrate tot nhat
-  if (!firstStateSaved && latestIaqAccuracy == 3) {
-    shouldSave = true;
-  }
-
-  // Sau do luu dinh ky
-  if (firstStateSaved && (millis() - lastStateSaveMs >= STATE_SAVE_PERIOD_MS)) {
-    shouldSave = true;
-  }
-
-  if (shouldSave) {
-    if (!saveStateToNVS()) {
-      checkBsecStatus();
-    }
-  }
-}
-
-void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec)
-{
-  (void)data;
-  (void)bsec;
-
-  if (!outputs.nOutputs) return;
-
-  for (uint8_t i = 0; i < outputs.nOutputs; i++) {
-    const bsecData output = outputs.output[i];
-
-    switch (output.sensor_id) {
-      case BSEC_OUTPUT_IAQ:
-        latestIaq = output.signal;
-        latestIaqAccuracy = output.accuracy;
-        break;
-
-      case BSEC_OUTPUT_STATIC_IAQ:
-        latestStaticIaq = output.signal;
-        break;
-
-      case BSEC_OUTPUT_CO2_EQUIVALENT:
-        latestEco2 = output.signal;
-        break;
-
-      case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT:
-        latestBvoc = output.signal;
-        break;
-
-      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
-        latestTemp = output.signal;
-        break;
-
-      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
-        latestHum = output.signal;
-        break;
-
-      case BSEC_OUTPUT_RAW_PRESSURE:
-        latestPress = output.signal / 100.0f; // Pa -> hPa
-        break;
-
-      case BSEC_OUTPUT_COMPENSATED_GAS:
-        latestCompGas = output.signal;
-        break;
-
-      default:
-        break;
-    }
-  }
-}
-
-void updateSoundReading()
-{
-  long sum = 0;
-
-  for (int i = 0; i < SAMPLE_COUNT; i++) {
-    sum += analogRead(MIC_PIN);
-    delayMicroseconds(200);
-  }
-
-  float meanRaw = (float)sum / SAMPLE_COUNT;
-  double sqSum = 0.0;
-
-  for (int i = 0; i < SAMPLE_COUNT; i++) {
-    float raw = analogRead(MIC_PIN);
-    float centered = raw - meanRaw;
-    sqSum += centered * centered;
-    delayMicroseconds(200);
-  }
-
-  float rmsRaw = sqrt(sqSum / SAMPLE_COUNT);
-  latestVrms = (rmsRaw / ADC_MAX) * VREF;
-
-  float dbRelative = 20.0f * log10(fmaxf(latestVrms, MIN_VRMS) / MIN_VRMS);
-  latestDb = dbRelative + SOUND_DB_OFFSET;
 }
 
 void handleButton()
@@ -447,46 +577,21 @@ void handleButton()
 
 void setup()
 {
+  Serial.begin(SERIAL_BAUD);
+
   Wire.begin();   // Nano ESP32: I2C mac dinh
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  analogReadResolution(12);
+  initMax4466();
 
   displayReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
   showBootMessage("IEQ monitor", "Starting...");
   delay(900);
+  connectWiFi();
 
-  if (!prefs.begin("bsec2", false)) {
-    showErrorAndStop("NVS error", 0);
-  }
+  initBME688();
+  initSPS30();
 
-  if (!envSensor.begin(BME688_I2C_ADDR, Wire)) {
-    checkBsecStatus();
-  }
-
-  // Load state cu truoc khi subscribe outputs
-  if (!loadStateFromNVS()) {
-    checkBsecStatus();
-  }
-
-  bsecSensor sensorList[] = {
-    BSEC_OUTPUT_IAQ,
-    BSEC_OUTPUT_STATIC_IAQ,
-    BSEC_OUTPUT_CO2_EQUIVALENT,
-    BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
-    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
-    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
-    BSEC_OUTPUT_RAW_PRESSURE,
-    BSEC_OUTPUT_COMPENSATED_GAS
-  };
-
-  if (!envSensor.updateSubscription(sensorList, ARRAY_LEN(sensorList), BSEC_SAMPLE_RATE_LP)) {
-    checkBsecStatus();
-  }
-
-  envSensor.attachCallback(newDataCallback);
-  checkBsecStatus();
-
-  showBootMessage("System ready", "Page 1: IEQ");
+  showBootMessage("System ready", "Page 0: Info");
   delay(800);
   renderDisplay();
 }
@@ -495,19 +600,22 @@ void loop()
 {
   handleButton();
 
-  if (!envSensor.run()) {
-    checkBsecStatus();
-  }
-
-  maybeSaveState();
-
-  if (millis() - lastSoundMs >= SOUND_UPDATE_MS) {
-    lastSoundMs = millis();
-    updateSoundReading();
-  }
+  updateBME688();
+  updateMax4466();
+  updateSPS30();
 
   if (millis() - lastDisplayMs >= DISPLAY_UPDATE_MS) {
     lastDisplayMs = millis();
     renderDisplay();
+  }
+
+  if (millis() - lastSerialMs >= SERIAL_SEND_MS) {
+    lastSerialMs = millis();
+    sendSerialSample();
+  }
+
+  if (millis() - lastHttpMs >= HTTP_SEND_MS) {
+    lastHttpMs = millis();
+    sendHttpSample();
   }
 }

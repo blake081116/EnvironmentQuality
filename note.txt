@@ -1,0 +1,27 @@
+- Arduino ESP32 board core / Arduino Nano ESP32 board package
+  - Dùng cho: Wire.h, WiFi.h, HTTPClient.h, Preferences.h
+  - GitHub: https://github.com/arduino/arduino-esp32
+
+- Bosch BSEC2 Library
+  - Dùng cho: bsec2.h, BME688/BSEC outputs, IAQ, state save/load
+  - GitHub: https://github.com/boschsensortec/Bosch-BSEC2-Library
+
+- Sensirion I2C SPS30
+  - Dùng cho: SensirionI2cSps30.h, SPS30 particulate matter sensor
+  - GitHub: https://github.com/Sensirion/arduino-i2c-sps30
+
+- Sensirion Core
+  - Dependency cho Sensirion I2C SPS30
+  - GitHub: https://github.com/Sensirion/arduino-core
+
+- Adafruit SSD1306
+  - Dùng cho: Adafruit_SSD1306.h, OLED 128x64
+  - GitHub: https://github.com/adafruit/Adafruit_SSD1306
+
+- Adafruit GFX Library
+  - Dùng cho: Adafruit_GFX.h, graphics/text drawing for OLED
+  - GitHub: https://github.com/adafruit/Adafruit-GFX-Library
+
+- Adafruit BusIO
+  - Dependency thường đi kèm Adafruit SSD1306/GFX trong Arduino Library Manager
+  - GitHub: https://github.com/adafruit/Adafruit_BusIO
