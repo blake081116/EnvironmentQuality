@@ -5,24 +5,61 @@ const fields = {
   ieqScore: document.getElementById("ieq-score"),
   iaqValue: document.getElementById("iaq-value"),
   iaqLabel: document.getElementById("iaq-label"),
-  soundDb: document.getElementById("sound-db"),
-  temp: document.getElementById("temp"),
-  humidity: document.getElementById("humidity"),
-  pressure: document.getElementById("pressure"),
-  accuracy: document.getElementById("accuracy"),
-  eco2: document.getElementById("eco2"),
-  bvoc: document.getElementById("bvoc"),
-  gas: document.getElementById("gas"),
-  pauseButton: document.getElementById("pause-button"),
+  acousticIeq: document.getElementById("acoustic-ieq"),
+  liveTemp: document.getElementById("live-temp"),
+  liveHumidity: document.getElementById("live-humidity"),
+  liveSoundDb: document.getElementById("live-sound-db"),
+  livePm2p5: document.getElementById("live-pm2p5"),
+  liveEco2: document.getElementById("live-eco2"),
+  page2Eco2: document.getElementById("page2-eco2"),
+  page2Bvoc: document.getElementById("page2-bvoc"),
+  page2RawGas: document.getElementById("page2-raw-gas"),
+  page3Accuracy: document.getElementById("page3-accuracy"),
+  page3StabilizationStatus: document.getElementById("page3-stabilization-status"),
+  page3CompGas: document.getElementById("page3-comp-gas"),
+  page3GasPercentage: document.getElementById("page3-gas-percentage"),
+  spsReady: document.getElementById("sps-ready"),
+  spsError: document.getElementById("sps-error"),
+  pm1p0: document.getElementById("pm1p0"),
+  pm2p5: document.getElementById("pm2p5"),
+  pm4p0: document.getElementById("pm4p0"),
+  pm10p0: document.getElementById("pm10p0"),
 };
 
 const history = {
-  iaq: [],
+  temp: [],
+  humidity: [],
   sound: [],
+  pm25: [],
+  eco2: [],
 };
 
-let paused = false;
-let source = null;
+const charts = [
+  { name: "temp", canvasId: "temp-chart", color: "#197a4b", fallbackMin: 18, fallbackMax: 32, unit: "C" },
+  { name: "humidity", canvasId: "humidity-chart", color: "#087b83", fallbackMin: 20, fallbackMax: 80, unit: "%" },
+  { name: "sound", canvasId: "sound-chart", color: "#0b7285", fallbackMin: 30, fallbackMax: 80, unit: "dB" },
+  { name: "pm25", canvasId: "pm25-chart", color: "#b46a00", fallbackMin: 0, fallbackMax: 35, unit: "" },
+  { name: "eco2", canvasId: "eco2-chart", color: "#b83232", fallbackMin: 350, fallbackMax: 1200, unit: "" },
+];
+
+let pollTimer = null;
+
+function setConnectionStatus(className, label, detail) {
+  if (fields.statusDot) fields.statusDot.className = className;
+  if (fields.statusText) fields.statusText.textContent = label;
+  if (fields.lastUpdate && detail) fields.lastUpdate.textContent = detail;
+}
+
+function showDashboardError(message, error) {
+  console.error(message, error);
+  setConnectionStatus("dot offline", "Dashboard error", message);
+}
+
+function findMissingFields() {
+  return Object.entries(fields)
+    .filter(([, element]) => !element)
+    .map(([name]) => name);
+}
 
 function formatNumber(value, digits = 1) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -39,6 +76,15 @@ function numberOrNull(value) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function firstNumber(...values) {
+  for (const value of values) {
+    const parsed = numberOrNull(value);
+    if (parsed !== null) return parsed;
+  }
+
+  return null;
+}
+
 function formatTime(timestamp) {
   if (!timestamp) return "Waiting for data";
   return new Date(timestamp * 1000).toLocaleTimeString();
@@ -53,12 +99,25 @@ function iaqLabel(iaq) {
   return "Severe";
 }
 
+function sourceLabel(sample) {
+  if (!sample.connected) return "Demo data";
+  if (sample.source === "device") return "WiFi push";
+  if (sample.source === "serial") return "Serial";
+  return "Live device";
+}
+
+function readyLabel(value) {
+  return value === true || value === "true" ? "Ready" : "Not ready";
+}
+
 function pushHistory(name, value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return;
+
   history[name].push({
     value: Number(value),
     time: Date.now(),
   });
+
   if (history[name].length > 80) history[name].shift();
 }
 
@@ -89,7 +148,7 @@ function resizeCanvas(canvas) {
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(Math.floor(rect.width * ratio), 320);
-  const height = Math.max(Math.floor(rect.height * ratio), 170);
+  const height = Math.max(Math.floor(rect.height * ratio), 150);
 
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
@@ -101,12 +160,14 @@ function resizeCanvas(canvas) {
 
 function drawChart(canvasId, points, options) {
   const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
   const context = canvas.getContext("2d");
   const ratio = resizeCanvas(canvas);
   const { width, height } = canvas;
-  const axisLeft = 54 * ratio;
-  const axisBottom = 30 * ratio;
-  const axisTop = 14 * ratio;
+  const axisLeft = 52 * ratio;
+  const axisBottom = 28 * ratio;
+  const axisTop = 12 * ratio;
   const axisRight = 12 * ratio;
   const plotX = axisLeft;
   const plotY = axisTop;
@@ -182,77 +243,94 @@ function drawChart(canvasId, points, options) {
   context.stroke();
 }
 
+function drawAllCharts() {
+  charts.forEach((chart) => {
+    drawChart(chart.canvasId, history[chart.name], chart);
+  });
+}
+
 function render(sample) {
-  if (paused || !sample) return;
+  if (!sample) return;
 
   const bme = sample.bme || {};
   const sound = sample.sound || {};
   const ieq = sample.ieq || {};
+  const sps30 = sample.sps30 || {};
 
   const iaq = numberOrNull(bme.iaq);
+  const temp = firstNumber(bme.temp, bme.rawTemp);
+  const humidity = firstNumber(bme.humidity, bme.rawHumidity);
   const db = numberOrNull(sound.db);
+  const pm25 = numberOrNull(sps30.pm2p5);
+  const eco2 = numberOrNull(bme.eco2);
+  const spsReady = sps30.ready === true || sps30.ready === "true";
 
-  fields.statusDot.className = sample.connected ? "dot live" : "dot offline";
-  fields.statusText.textContent = sample.connected ? "Live device" : "Demo data";
-  fields.lastUpdate.textContent = `Updated ${formatTime(sample.timestamp)}`;
+  setConnectionStatus(
+    sample.connected ? "dot live" : "dot offline",
+    sourceLabel(sample),
+    `Updated ${formatTime(sample.timestamp)}`,
+  );
 
   fields.ieqScore.textContent = formatNumber(ieq.score, 0);
   fields.iaqValue.textContent = formatNumber(iaq, 1);
   fields.iaqLabel.textContent = iaq === null ? "Waiting" : iaqLabel(iaq);
-  fields.soundDb.textContent = formatNumber(db, 1);
+  fields.acousticIeq.textContent = formatNumber(db, 1);
 
-  fields.temp.textContent = formatNumber(bme.temp, 1);
-  fields.humidity.textContent = formatNumber(bme.humidity, 1);
-  fields.pressure.textContent = formatNumber(bme.pressure, 1);
-  fields.accuracy.textContent = bme.accuracy ?? "--";
-  fields.eco2.textContent = formatNumber(bme.eco2, 0);
-  fields.bvoc.textContent = formatNumber(bme.bvoc, 3);
-  fields.gas.textContent = formatNumber(bme.gas, 0);
+  fields.liveTemp.textContent = formatNumber(temp, 1);
+  fields.liveHumidity.textContent = formatNumber(humidity, 1);
+  fields.liveSoundDb.textContent = formatNumber(db, 1);
+  fields.livePm2p5.textContent = formatNumber(pm25, 1);
+  fields.liveEco2.textContent = formatNumber(eco2, 0);
 
-  pushHistory("iaq", iaq);
+  fields.page2Eco2.textContent = formatNumber(eco2, 0);
+  fields.page2Bvoc.textContent = formatNumber(bme.bvoc, 3);
+  fields.page2RawGas.textContent = formatNumber(bme.rawGas, 0);
+  fields.page3Accuracy.textContent = bme.accuracy === undefined || bme.accuracy === null ? "--" : `${bme.accuracy}/3`;
+  fields.page3StabilizationStatus.textContent = formatNumber(bme.stabilizationStatus, 0);
+  fields.page3CompGas.textContent = formatNumber(bme.compGas ?? bme.gas, 0);
+  fields.page3GasPercentage.textContent = formatNumber(bme.gasPercentage, 1);
+
+  fields.spsReady.textContent = readyLabel(spsReady);
+  fields.spsError.textContent = sps30.error ?? "--";
+  fields.pm1p0.textContent = formatNumber(sps30.pm1p0, 1);
+  fields.pm2p5.textContent = formatNumber(sps30.pm2p5, 1);
+  fields.pm4p0.textContent = formatNumber(sps30.pm4p0, 1);
+  fields.pm10p0.textContent = formatNumber(sps30.pm10p0, 1);
+
+  pushHistory("temp", temp);
+  pushHistory("humidity", humidity);
   pushHistory("sound", db);
-  drawChart("iaq-chart", history.iaq, {
-    color: "#197a4b",
-    fallbackMin: 0,
-    fallbackMax: 100,
-    unit: "",
-  });
-  drawChart("sound-chart", history.sound, {
-    color: "#087b83",
-    fallbackMin: 30,
-    fallbackMax: 80,
-    unit: "dB",
-  });
+  pushHistory("pm25", pm25);
+  pushHistory("eco2", eco2);
+  drawAllCharts();
 }
 
 async function pollLatest() {
   try {
     const response = await fetch("/api/latest");
+    if (!response.ok) throw new Error(`GET /api/latest ${response.status}`);
     render(await response.json());
-  } catch {
-    fields.statusDot.className = "dot offline";
-    fields.statusText.textContent = "Disconnected";
+  } catch (error) {
+    console.error("Polling /api/latest failed", error);
+    setConnectionStatus("dot offline", "Disconnected", "Waiting for data");
   }
 }
 
-function startStream() {
-  if (!window.EventSource) {
-    setInterval(pollLatest, 1000);
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollLatest, 1000);
+  pollLatest();
+}
+
+function startDashboard() {
+  const missingFields = findMissingFields();
+  if (missingFields.length) {
+    showDashboardError(`Missing dashboard elements: ${missingFields.join(", ")}`);
     return;
   }
 
-  source = new EventSource("/api/stream");
-  source.onmessage = (event) => render(JSON.parse(event.data));
-  source.onerror = () => {
-    if (source) source.close();
-    source = null;
-    setInterval(pollLatest, 1000);
-  };
+  startPolling();
 }
 
-fields.pauseButton.addEventListener("click", () => {
-  paused = !paused;
-  fields.pauseButton.textContent = paused ? "Resume" : "Pause";
-});
-
-startStream();
+window.addEventListener("resize", drawAllCharts);
+startDashboard();

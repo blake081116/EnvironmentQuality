@@ -8,8 +8,8 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from serial import Serial
 from serial.tools import list_ports
@@ -20,6 +20,15 @@ STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="Environment Quality Dashboard")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 state_lock = Lock()
 latest_sample: dict[str, Any] | None = None
@@ -34,6 +43,11 @@ def make_demo_sample() -> dict[str, Any]:
 
     iaq = 50.0 + wave * 8.0 + random.uniform(-1.5, 1.5)
     sound_db = 50.0 + faster_wave * 4.0 + random.uniform(-1.0, 1.0)
+    pm2p5 = max(1.0, 8.0 + wave * 2.5 + random.uniform(-0.6, 0.6))
+    raw_temp = 25.1 + wave * 0.8 + random.uniform(-0.1, 0.1)
+    comp_temp = raw_temp - 0.6
+    raw_humidity = 48.0 - wave * 3.2 + random.uniform(-0.4, 0.4)
+    comp_humidity = raw_humidity - 1.4
 
     return {
         "timestamp": now,
@@ -43,18 +57,39 @@ def make_demo_sample() -> dict[str, Any]:
             "score": 100,
         },
         "bme": {
-            "temp": 24.5 + wave * 0.9 + random.uniform(-0.1, 0.1),
-            "humidity": 46.0 - wave * 3.0 + random.uniform(-0.4, 0.4),
+            "temp": comp_temp,
+            "rawTemp": raw_temp,
+            "humidity": comp_humidity,
+            "rawHumidity": raw_humidity,
             "pressure": 1012.5 + math.sin(now / 45.0) * 2.0,
             "iaq": iaq,
+            "staticIaq": iaq * 0.92,
             "accuracy": 0,
             "eco2": 500.0 + max(0.0, iaq - 50.0) * 7.0,
             "bvoc": 0.25 + max(0.0, iaq - 50.0) * 0.012,
             "gas": 85000.0 - max(0.0, iaq - 50.0) * 700.0,
+            "rawGas": 92000.0 - max(0.0, iaq - 50.0) * 650.0,
+            "compGas": 85000.0 - max(0.0, iaq - 50.0) * 700.0,
+            "gasPercentage": 74.0 - max(0.0, iaq - 50.0) * 0.35,
+            "stabilizationStatus": 1,
         },
         "sound": {
             "db": sound_db,
             "vrms": 0.006 + max(0.0, sound_db - 45.0) * 0.00035,
+        },
+        "sps30": {
+            "ready": True,
+            "error": 0,
+            "pm1p0": pm2p5 * 0.64,
+            "pm2p5": pm2p5,
+            "pm4p0": pm2p5 * 1.18,
+            "pm10p0": pm2p5 * 1.42,
+            "nc0p5": pm2p5 * 78.0,
+            "nc1p0": pm2p5 * 28.0,
+            "nc2p5": pm2p5 * 5.4,
+            "nc4p0": pm2p5 * 1.5,
+            "nc10p0": pm2p5 * 0.35,
+            "typicalSize": 0.62 + wave * 0.04,
         },
     }
 
@@ -74,6 +109,7 @@ def normalize_device_sample(sample: dict[str, Any]) -> dict[str, Any]:
     sample.setdefault("ieq", {})
     sample.setdefault("bme", {})
     sample.setdefault("sound", {})
+    sample.setdefault("sps30", {})
     return sample
 
 
@@ -157,8 +193,24 @@ async def shutdown() -> None:
 
 
 @app.get("/")
+def root() -> FileResponse:
+    return dashboard_file()
+
+
+@app.get("/dashboard")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return dashboard_file()
+
+
+def dashboard_file() -> FileResponse:
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/latest")
@@ -183,14 +235,3 @@ def push_sample(sample: dict[str, Any]) -> dict[str, str]:
     save_latest_sample(sample)
 
     return {"status": "ok"}
-
-
-@app.get("/api/stream")
-async def stream() -> StreamingResponse:
-    async def event_generator():
-        while True:
-            payload = json.dumps(get_latest_sample())
-            yield f"data: {payload}\n\n"
-            await asyncio.sleep(1)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")

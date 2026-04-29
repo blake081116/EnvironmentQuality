@@ -32,23 +32,116 @@
           <span>/100</span>
         </article>
 
-        <article class="primary-metric">
-          <div class="metric-title">
-            <p>IAQ</p>
-            <button class="help-button" type="button" aria-label="IAQ help" data-help="Indoor Air Quality indicator representing the current air condition estimated from the sensor's environmental and gas measurements. Higher values generally indicate poorer air quality.">?</button>
+        <article class="panel quality-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">IEQ components</p>
+              <h2>Environment quality</h2>
+            </div>
           </div>
-          <strong id="iaq-value">--</strong>
-          <span id="iaq-label">Waiting</span>
-        </article>
 
-        <article class="primary-metric">
-          <div class="metric-title">
-            <p>Sound</p>
-            <button class="help-button" type="button" aria-label="Sound help" data-help="Current ambient sound level measured in decibels. This value reflects the noise level around the device at the moment of measurement.">?</button>
+          <div class="component-grid">
+            <div class="component-metric">
+              <div class="metric-title">
+                <p>IAQ</p>
+                <button class="help-button" type="button" aria-label="IAQ help" data-help="Indoor Air Quality indicator estimated by the BME688 and BSEC algorithm. Higher values generally indicate poorer air quality.">?</button>
+              </div>
+              <strong id="iaq-value">--</strong>
+              <span id="iaq-label">Waiting</span>
+            </div>
+            <div class="component-metric">
+              <div class="metric-title">
+                <p>Thermal IEQ</p>
+                <button class="help-button" type="button" aria-label="Thermal IEQ help" data-help="Thermal comfort placeholder score.">?</button>
+              </div>
+              <strong><span id="thermal-ieq">100</span>/100</strong>
+            </div>
+            <div class="component-metric">
+              <div class="metric-title">
+                <p>Acoustic IEQ</p>
+                <button class="help-button" type="button" aria-label="Acoustic IEQ help" data-help="Current ambient sound level measured in decibels from the MAX4466 microphone path.">?</button>
+              </div>
+              <strong><span id="acoustic-ieq">--</span> dB</strong>
+            </div>
+            <div class="component-metric">
+              <div class="metric-title">
+                <p>Visual IEQ</p>
+                <button class="help-button" type="button" aria-label="Visual IEQ help" data-help="Visual comfort placeholder score.">?</button>
+              </div>
+              <strong><span id="visual-ieq">100</span>/100</strong>
+            </div>
           </div>
-          <strong><span id="sound-db">--</span> dB</strong>
-          <span id="sound-note">Baseline adjusted</span>
         </article>
+      </section>
+
+      <section class="panel live-data-panel" aria-label="Live data">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Live data</p>
+            <h2>Current readings</h2>
+          </div>
+        </div>
+
+        <div class="live-summary-grid">
+          <div>
+            <span>Temperature</span>
+            <strong><span id="live-temp">--</span> C</strong>
+          </div>
+          <div>
+            <span>Humidity</span>
+            <strong><span id="live-humidity">--</span> %</strong>
+          </div>
+          <div>
+            <span>Sound dB</span>
+            <strong><span id="live-sound-db">--</span> dB</strong>
+          </div>
+          <div>
+            <span>PM2.5</span>
+            <strong><span id="live-pm2p5">--</span> ug/m3</strong>
+          </div>
+          <div>
+            <span>eCO2</span>
+            <strong><span id="live-eco2">--</span> ppm</strong>
+          </div>
+        </div>
+
+        <div class="chart-grid">
+          <div>
+            <div class="chart-title">
+              <label for="temp-chart">Temperature</label>
+              <button class="help-button" type="button" aria-label="Temperature chart help" data-help="Live trend of BME688 compensated temperature.">?</button>
+            </div>
+            <canvas id="temp-chart" width="520" height="170"></canvas>
+          </div>
+          <div>
+            <div class="chart-title">
+              <label for="humidity-chart">Humidity</label>
+              <button class="help-button" type="button" aria-label="Humidity chart help" data-help="Live trend of BME688 compensated humidity.">?</button>
+            </div>
+            <canvas id="humidity-chart" width="520" height="170"></canvas>
+          </div>
+          <div>
+            <div class="chart-title">
+              <label for="sound-chart">Sound dB</label>
+              <button class="help-button" type="button" aria-label="Sound chart help" data-help="Live trend of ambient sound level.">?</button>
+            </div>
+            <canvas id="sound-chart" width="520" height="170"></canvas>
+          </div>
+          <div>
+            <div class="chart-title">
+              <label for="pm25-chart">PM2.5</label>
+              <button class="help-button" type="button" aria-label="PM2.5 chart help" data-help="Live trend of SPS30 PM2.5 mass concentration.">?</button>
+            </div>
+            <canvas id="pm25-chart" width="520" height="170"></canvas>
+          </div>
+          <div>
+            <div class="chart-title">
+              <label for="eco2-chart">eCO2</label>
+              <button class="help-button" type="button" aria-label="eCO2 chart help" data-help="Live trend of BME688 estimated eCO2.">?</button>
+            </div>
+            <canvas id="eco2-chart" width="520" height="170"></canvas>
+          </div>
+        </div>
       </section>
 
       <section class="content-grid">
@@ -63,59 +156,82 @@
 
           <div class="metric-list">
             <div>
-              <span class="metric-label">Temperature <button class="help-button" type="button" aria-label="Temperature help" data-help="Current indoor air temperature measured near the device.">?</button></span>
-              <strong><span id="temp">--</span> C</strong>
-            </div>
-            <div>
-              <span class="metric-label">Humidity <button class="help-button" type="button" aria-label="Humidity help" data-help="Current relative humidity, indicating how much moisture is present in the air compared with the maximum the air can hold at the same temperature.">?</button></span>
-              <strong><span id="humidity">--</span> %</strong>
-            </div>
-            <div>
-              <span class="metric-label">Pressure <button class="help-button" type="button" aria-label="Pressure help" data-help="Current barometric pressure measured by the sensor. This is the absolute atmospheric pressure at the device location.">?</button></span>
-              <strong><span id="pressure">--</span> hPa</strong>
-            </div>
-            <div>
-              <span class="metric-label">Accuracy <button class="help-button" type="button" aria-label="Accuracy help" data-help="Current confidence level of the Bosch air-quality algorithm baseline and calibration state. A higher value means the IAQ-related outputs are more stable and reliable.">?</button></span>
-              <strong id="accuracy">--</strong>
-            </div>
-            <div>
-              <span class="metric-label">eCO2 <button class="help-button" type="button" aria-label="eCO2 help" data-help="Estimated equivalent CO2 level derived from the Bosch algorithm. This is not a direct CO2 measurement; it is an approximation inferred from the gas sensor response.">?</button></span>
-              <strong><span id="eco2">--</span> ppm</strong>
+              <span class="metric-label">eCO2 <button class="help-button" type="button" aria-label="eCO2 help" data-help="Estimated eCO2 level derived from the Bosch algorithm. This is inferred from the gas sensor response, not measured by a dedicated carbon dioxide sensor.">?</button></span>
+              <strong><span id="page2-eco2">--</span> ppm</strong>
             </div>
             <div>
               <span class="metric-label">bVOC <button class="help-button" type="button" aria-label="bVOC help" data-help="Estimated breath VOC equivalent derived from the Bosch algorithm. It represents a VOC-related air quality estimate rather than the concentration of a specific gas.">?</button></span>
-              <strong><span id="bvoc">--</span> ppm</strong>
+              <strong><span id="page2-bvoc">--</span> ppm</strong>
             </div>
             <div>
-              <span class="metric-label">Gas <button class="help-button" type="button" aria-label="Gas help" data-help="Raw or compensated gas resistance signal from the MOX gas sensor. This value reflects how strongly the sensor is reacting to VOC-related gases in the environment; it is not a direct reading of one specific gas.">?</button></span>
-              <strong><span id="gas">--</span> ohm</strong>
+              <span class="metric-label">Raw gas <button class="help-button" type="button" aria-label="Raw gas help" data-help="Raw gas resistance signal from the BME688 MOX gas sensor.">?</button></span>
+              <strong><span id="page2-raw-gas">--</span> ohm</strong>
             </div>
           </div>
         </article>
 
-        <article class="panel chart-panel">
+        <article class="panel bme-panel">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Live trend</p>
-              <h2>Air and Sound</h2>
+              <p class="eyebrow">Page 3</p>
+              <h2>BME688</h2>
             </div>
-            <button id="pause-button" type="button">Pause</button>
+            <span class="pill">I2C</span>
           </div>
 
-          <div class="chart-stack">
+          <div class="metric-list">
             <div>
-              <div class="chart-title">
-                <label for="iaq-chart">IAQ</label>
-                <button class="help-button" type="button" aria-label="IAQ chart help" data-help="Live trend of the IAQ value over time.">?</button>
-              </div>
-              <canvas id="iaq-chart" width="720" height="220"></canvas>
+              <span class="metric-label">Accuracy <button class="help-button" type="button" aria-label="Accuracy help" data-help="Current confidence level of the Bosch air-quality algorithm baseline and calibration state. A higher value means the IAQ-related outputs are more stable and reliable.">?</button></span>
+              <strong id="page3-accuracy">--</strong>
             </div>
             <div>
-              <div class="chart-title">
-                <label for="sound-chart">Sound dB</label>
-                <button class="help-button" type="button" aria-label="Sound chart help" data-help="Live trend of ambient sound level over time.">?</button>
-              </div>
-              <canvas id="sound-chart" width="720" height="220"></canvas>
+              <span class="metric-label">Stabilization <button class="help-button" type="button" aria-label="Stabilization help" data-help="BSEC stabilization status, where a higher state indicates the gas signal has settled enough for better algorithm output.">?</button></span>
+              <strong id="page3-stabilization-status">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">Compensated gas <button class="help-button" type="button" aria-label="Compensated gas help" data-help="BSEC compensated gas output.">?</button></span>
+              <strong><span id="page3-comp-gas">--</span> ohm</strong>
+            </div>
+            <div>
+              <span class="metric-label">Gas percentage <button class="help-button" type="button" aria-label="Gas percentage help" data-help="Percentage of the filtered gas range reported by BSEC.">?</button></span>
+              <strong><span id="page3-gas-percentage">--</span> %</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel sps-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Page 5</p>
+              <h2>SPS30</h2>
+            </div>
+            <span class="pill">I2C</span>
+          </div>
+
+          <div class="metric-list sps-pm-list">
+            <div>
+              <span class="metric-label">Sensor status</span>
+              <strong id="sps-ready">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">Error code</span>
+              <strong id="sps-error">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">PM1.0</span>
+              <strong><span id="pm1p0">--</span> ug/m3</strong>
+            </div>
+            <div>
+              <span class="metric-label">PM2.5</span>
+              <strong><span id="pm2p5">--</span> ug/m3</strong>
+            </div>
+            <div>
+              <span class="metric-label">PM4.0</span>
+              <strong><span id="pm4p0">--</span> ug/m3</strong>
+            </div>
+            <div>
+              <span class="metric-label">PM10</span>
+              <strong><span id="pm10p0">--</span> ug/m3</strong>
             </div>
           </div>
         </article>

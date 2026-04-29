@@ -277,25 +277,23 @@ String displayTextLimit(String text, uint8_t maxChars)
   return text.substring(0, maxChars);
 }
 
-String connectedWiFiName()
+String pageWiFiName()
 {
   if (WiFi.status() == WL_CONNECTED) {
     String ssid = WiFi.SSID();
     if (ssid.length()) return ssid;
   }
 
-  if (WIFI_SSID[0] != '\0') return "WiFi not connected";
-
-  return "USB cable";
+  return "--";
 }
 
-String connectedWiFiIp()
+String connectionStatusText()
 {
-  if (WiFi.status() == WL_CONNECTED) {
-    return WiFi.localIP().toString();
-  }
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
+  if (Serial) return "Serial";
+#endif
 
-  return "--";
+  return "Power only";
 }
 
 void drawPageInfo()
@@ -308,12 +306,12 @@ void drawPageInfo()
   display.print("Page 0: Info");
 
   display.setCursor(0, 10);
-  display.print(WiFi.status() == WL_CONNECTED ? "WiFi: " : "Link: ");
-  display.print(displayTextLimit(connectedWiFiName(), 15));
+  display.print("WiFi: ");
+  display.print(displayTextLimit(pageWiFiName(), 15));
 
-  display.setCursor(0, 20);
-  display.print("IP: ");
-  display.print(connectedWiFiIp());
+  display.setCursor(0, 22);
+  display.print("Status: ");
+  display.print(connectionStatusText());
 
   display.setCursor(0, 34);
   display.print("IEQ SCORE");
@@ -338,8 +336,6 @@ void drawPageBMEFirst()
   display.setCursor(0, 9);
   display.print("IAQ: ");
   drawValue(latestIaq, 1);
-  display.print(" A:");
-  display.print(latestIaqAccuracy);
 
   display.setCursor(0, 18);
   display.print("Static: ");
